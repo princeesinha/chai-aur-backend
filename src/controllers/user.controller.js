@@ -4,6 +4,7 @@ import { User } from "../models/user.model.js"
 import { uploadToCloudinary } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import mongoose from "mongoose";
+import jwt from "jsonwebtoken";
 
 const generateAccessAndRefreshToken = async (userId) => {
     try {
@@ -182,8 +183,8 @@ const logoutUser = asyncHandler(async (req, res) => {
    await User.findByIdAndUpdate(
         req.user._id, 
         {
-            $set: {
-                refreshToken: undefined
+            $unset: {
+                refreshToken: 1 // this removes the field from document
             }
         },
         {
@@ -385,17 +386,30 @@ const user = await User.findByIdAndUpdate(
 })
 
 
-const getUserChannelProfile = asyncHandler(async(req, res) =>{
-    const {username} = req.params
+const getUserChannelProfile = asyncHandler(async (req, res) => {
+    const { username } = req.params;
+
+    console.log("CHANNEL USERNAME:", username);
+    console.log("JWT USER:", req.user);
 
     if (!username?.trim()) {
-        throw new ApiError(400, "username is missing")
+        throw new ApiError(400, "username is missing");
+    }
+
+    const user = await User.findOne({
+        username: username.toLowerCase()
+    });
+
+    console.log("USER FOUND:", user);
+
+    if (!user) {
+        throw new ApiError(404, "User not found with this username");
     }
 
     const channel = await User.aggregate([
         {
             $match: {
-                username: username?.toLowerCase()
+            username: username.toLowerCase()
             }
         },
         {
@@ -424,7 +438,7 @@ const getUserChannelProfile = asyncHandler(async(req, res) =>{
                 },
                 isSubscribed: {
                     $cond: {
-                        if: {$in: [req.user?._id, "$subcribers.subscriber"]},
+                        if: {$in: [req.user._id, "$subscribers.subscriber"]},
                         then: true,
                         else: false
                     }
@@ -443,18 +457,20 @@ const getUserChannelProfile = asyncHandler(async(req, res) =>{
                 email: 1
             }
         }
-    ])
+    ]);
 
-    if (!channel?.length) {
-        throw new ApiError(404, "channel does not exists")
+    console.log("CHANNEL RESULT:", channel);
+
+    if (!channel.length) {
+        throw new ApiError(404, "channel does not exists");
     }
 
     return res
     .status(200)
     .json(
         new ApiResponse(200, channel[0], "User channel fetched successfully")
-    )
-})
+    );
+});
 
 const getWatchHistory = asyncHandler(async(req, res) => {
     const user = await User.aggregate([
